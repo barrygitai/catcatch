@@ -25,6 +25,9 @@
     geoInflight: null,
     mapHasView: false,
     tiles: null,
+    crewReady: false,
+    crew: { leadId: null, supportIds: [] },
+    battle: null,
     markers: [],
     aimRaf: null,
     aimPos: 0,
@@ -101,6 +104,7 @@
   }
 
   function setTab(tab) {
+    if (tab !== "battle") stopFightAim();
     state.tab = tab;
     $$(".tab-panel").forEach((p) => { p.hidden = true; });
     $(`#tab-${tab}`).hidden = false;
@@ -110,6 +114,7 @@
     if (tab === "album") renderAlbum();
     if (tab === "profile") renderProfile();
     if (tab === "map") ensureMap();
+    if (tab === "battle") renderBattle();
     refreshResources();
   }
 
@@ -848,6 +853,383 @@
     refreshResources();
   }
 
+  /* ---------- Alley Clash (training only) ---------- */
+  function findCat(id) {
+    return state.data.cats.find((c) => c.id === id) || null;
+  }
+
+  function ensureCrew() {
+    const leadOk = state.crewReady && findCat(state.crew.leadId);
+    if (leadOk) return;
+    const picks = D.defaultCrew(state.data.cats);
+    state.crew = {
+      leadId: picks.lead ? picks.lead.id : null,
+      supportIds: picks.supports.map((c) => c.id)
+    };
+    state.crewReady = !!picks.lead;
+  }
+
+  function toggleCrewCat(id) {
+    const crew = state.crew;
+    if (crew.leadId === id) {
+      crew.leadId = crew.supportIds.shift() || null;
+      return;
+    }
+    const idx = crew.supportIds.indexOf(id);
+    if (idx >= 0) {
+      crew.supportIds.splice(idx, 1);
+      return;
+    }
+    if (!crew.leadId) crew.leadId = id;
+    else if (crew.supportIds.length < 2) crew.supportIds.push(id);
+    else crew.supportIds[1] = id;
+  }
+
+  function paintSetup() {
+    ensureCrew();
+    const lead = findCat(state.crew.leadId);
+    const supports = state.crew.supportIds.map(findCat).filter(Boolean);
+    const slots = $("#crew-slots");
+    slots.innerHTML = "";
+    const rows = [["领队", lead], ["支援", supports[0] || null], ["支援", supports[1] || null]];
+    for (const [role, cat] of rows) {
+      const el = document.createElement("div");
+      el.className = "crew-slot" + (cat ? "" : " vacant");
+      if (!cat) {
+        el.innerHTML = `<span class="slot-role">${role}</span><em>空</em>`;
+      } else {
+        const kws = (cat.keywords || []).map((k) => k.name).join(" · ");
+        el.innerHTML = `
+          <img alt="" />
+          <div>
+            <span class="slot-role">${role}</span>
+            <strong></strong>
+            <small class="slot-stats"></small>
+            <small class="slot-kws"></small>
+          </div>`;
+        const img = el.querySelector("img");
+        img.src = cat.photo;
+        img.alt = cat.name;
+        applyPhotoStyle(img, cat.stickerStyle);
+        el.querySelector("strong").textContent = cat.name;
+        el.querySelector(".slot-stats").textContent = `${cat.rarity} · SNACK ${cat.snack} · CHARM ${cat.charm}`;
+        el.querySelector(".slot-kws").textContent = kws;
+      }
+      slots.appendChild(el);
+    }
+    const picker = $("#crew-picker");
+    picker.innerHTML = "";
+    for (const cat of [...state.data.cats].reverse()) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      const on = cat.id === state.crew.leadId || state.crew.supportIds.includes(cat.id);
+      btn.className = "pick-cat" + (on ? " on" : "");
+      btn.innerHTML = `<img alt="" /><span></span>`;
+      const img = btn.querySelector("img");
+      img.src = cat.photo;
+      img.alt = cat.name;
+      applyPhotoStyle(img, cat.stickerStyle);
+      btn.querySelector("span").textContent = cat.name;
+      btn.addEventListener("click", () => {
+        toggleCrewCat(cat.id);
+        paintSetup();
+      });
+      picker.appendChild(btn);
+    }
+    const start = $("#battle-start");
+    if (start) start.disabled = !lead;
+  }
+
+  function renderBattle() {
+    const empty = state.data.cats.length === 0;
+    $("#battle-empty").hidden = !empty;
+    if (empty) {
+      stopFightAim();
+      state.battle = null;
+      state.crewReady = false;
+      $("#battle-setup").hidden = true;
+      $("#battle-fight").hidden = true;
+      $("#battle-result").hidden = true;
+      return;
+    }
+    if (!state.battle) {
+      $("#battle-fight").hidden = true;
+      $("#battle-result").hidden = true;
+      $("#battle-setup").hidden = false;
+      const last = state.data.lastBattle;
+      $("#battle-sub").textContent = last
+        ? `上场${last.win ? "胜利" : "失利"} · 训练对手 ${last.crew}`
+        : "训练对手 · 猫会留在图鉴里";
+      paintSetup();
+      return;
+    }
+    $("#battle-setup").hidden = true;
+    if (state.battle.phase === "result") {
+      $("#battle-fight").hidden = true;
+      $("#battle-result").hidden = false;
+      return;
+    }
+    $("#battle-result").hidden = true;
+    $("#battle-fight").hidden = false;
+    paintHp();
+    if (state.battle.phase === "aim" && state.tab === "battle") startFightAim();
+    else if (state.battle.phase === "skills") showSkills();
+    else if (state.battle.phase === "rival" && !state.battle.timer) rivalTurn();
+  }
+
+  function stopFightAim() {
+    const b = state.battle;
+    if (!b) return;
+    if (b.raf) cancelAnimationFrame(b.raf);
+    b.raf = null;
+    if (b.timer) clearTimeout(b.timer);
+    b.timer = null;
+    const bar = $("#fight-bar");
+    if (bar) bar.onpointerdown = null;
+  }
+
+  function fightLog(line) {
+    if (!state.battle) return;
+    const el = $("#fight-log");
+    if (!el) return;
+    const p = document.createElement("p");
+    p.textContent = line;
+    el.appendChild(p);
+    while (el.children.length > 6) el.removeChild(el.firstChild);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function paintHp() {
+    const b = state.battle;
+    if (!b) return;
+    $("#fight-you-name").textContent = b.player.lead.name;
+    $("#fight-foe-name").textContent = "训练对手";
+    $("#fight-you-num").textContent = `${b.player.hp}/${b.player.max}`;
+    $("#fight-foe-num").textContent = `${b.rival.hp}/${b.rival.max}`;
+    $("#fight-you-hp").style.width = `${Math.max(0, Math.round((b.player.hp / b.player.max) * 100))}%`;
+    $("#fight-foe-hp").style.width = `${Math.max(0, Math.round((b.rival.hp / b.rival.max) * 100))}%`;
+  }
+
+  function describeHit(who, result) {
+    if (result.notes.includes("Guard")) return `${who}的攻击被 Guard 挡住了`;
+    const verb = result.hit ? "命中" : "擦到了";
+    let line = `${who} ${verb}，造成 ${result.dmg} 点伤害`;
+    if (result.notes.includes("Loaf")) line = `${who} 打在 Loaf 上，造成 ${result.dmg} 点伤害`;
+    if (result.extra && result.extra.dmg) line += `，终局一击再造成 ${result.extra.dmg}`;
+    return line;
+  }
+
+  function checkKo() {
+    const b = state.battle;
+    if (!b || b.phase === "result") return true;
+    if (b.rival.hp <= 0) { endBattle(true); return true; }
+    if (b.player.hp <= 0) { endBattle(false); return true; }
+    return false;
+  }
+
+  function endBattle(playerWon) {
+    const b = state.battle;
+    if (!b || b.phase === "result") return;
+    b.phase = "result";
+    stopFightAim();
+    const xp = playerWon ? 36 : 12;
+    const coins = playerWon ? 8 : 2;
+    state.data.resources.xp += xp;
+    state.data.resources.coins += coins;
+    state.data.lastBattle = { win: !!playerWon, crew: b.crewName, at: Date.now(), xp, coins };
+    S.save(state.data);
+    refreshResources();
+    $("#battle-fight").hidden = true;
+    $("#battle-result").hidden = false;
+    $("#battle-result-title").textContent = playerWon ? "巷战胜利" : "巷战失利";
+    $("#battle-result-reward").textContent = `XP +${xp} · 🪙 +${coins}`;
+  }
+
+  function startBattle() {
+    const lead = findCat(state.crew.leadId);
+    if (!lead) {
+      toast("先选一只领队");
+      return;
+    }
+    const supports = state.crew.supportIds.map(findCat).filter(Boolean).slice(0, 2);
+    const albumSize = state.data.cats.length;
+    const match = D.createTrainingMatch(state.data.cats, { lead, supports });
+    if (state.data.cats.length !== albumSize) {
+      state.data.cats.length = albumSize;
+    }
+    state.battle = {
+      phase: "aim",
+      turn: 0,
+      crewName: match.crewName,
+      player: match.player,
+      rival: match.rival,
+      raf: null,
+      timer: null,
+      pos: 0,
+      dir: 1,
+      resolving: false
+    };
+    $("#battle-setup").hidden = true;
+    $("#battle-result").hidden = true;
+    $("#battle-fight").hidden = false;
+    $("#fight-log").innerHTML = "";
+    $("#battle-sub").textContent = `训练对手 · ${match.crewName}`;
+    fightLog(`巷战开始。训练对手 ${match.crewName}`);
+    paintHp();
+    beginPlayerTurn();
+  }
+
+  function beginPlayerTurn() {
+    const b = state.battle;
+    if (!b || b.phase === "result") return;
+    b.turn += 1;
+    if (b.turn > 10) {
+      fightLog("时间到，血量更高的一方获胜");
+      endBattle(b.player.hp >= b.rival.hp);
+      return;
+    }
+    if (b.player.skipNext) {
+      b.player.skipNext = false;
+      fightLog("你这一拍在打盹");
+      rivalTurn();
+      return;
+    }
+    b.phase = "aim";
+    b.resolving = false;
+    const prompt = $("#fight-prompt");
+    if (prompt) prompt.textContent = "准星进入绿色时点屏幕";
+    if (state.tab === "battle") startFightAim();
+  }
+
+  function startFightAim() {
+    const b = state.battle;
+    if (!b || b.phase !== "aim" || state.tab !== "battle") return;
+    if (b.raf) cancelAnimationFrame(b.raf);
+    b.raf = null;
+    $("#fight-aim").hidden = false;
+    $("#fight-skills").hidden = true;
+    const green = $("#fight-green");
+    const width = 18 + Math.floor(Math.random() * 10);
+    const left = 15 + Math.floor(Math.random() * Math.max(1, 70 - width));
+    green.style.width = `${width}%`;
+    green.style.left = `${left}%`;
+    b.pos = 0;
+    b.dir = 1;
+    b.resolving = false;
+    const speed = 0.48 + Math.random() * 0.22;
+    const marker = $("#fight-marker");
+    const tick = () => {
+      if (!state.battle || state.battle !== b || b.phase !== "aim") return;
+      b.pos += b.dir * speed;
+      if (b.pos >= 100) { b.pos = 100; b.dir = -1; }
+      if (b.pos <= 0) { b.pos = 0; b.dir = 1; }
+      marker.style.left = `${b.pos}%`;
+      b.raf = requestAnimationFrame(tick);
+    };
+    b.raf = requestAnimationFrame(tick);
+    const bar = $("#fight-bar");
+    bar.onpointerdown = (e) => {
+      e.preventDefault();
+      resolveFightAim();
+    };
+  }
+
+  function resolveFightAim() {
+    const b = state.battle;
+    if (!b || b.phase !== "aim" || b.resolving) return;
+    b.resolving = true;
+    if (b.raf) cancelAnimationFrame(b.raf);
+    b.raf = null;
+    const green = $("#fight-green");
+    const gLeft = parseFloat(green.style.left);
+    const gWidth = parseFloat(green.style.width);
+    const hit = b.pos >= gLeft && b.pos <= gLeft + gWidth;
+    const result = D.launch(b.player, b.rival, hit);
+    fightLog(describeHit(b.player.lead.name, result));
+    paintHp();
+    if (checkKo()) return;
+    const offer = (hit || b.turn % 2 === 0) && b.player.keywordsLeft.length > 0;
+    if (offer) showSkills();
+    else rivalTurn();
+  }
+
+  function showSkills() {
+    const b = state.battle;
+    if (!b || b.phase === "result") return;
+    b.phase = "skills";
+    if (b.raf) cancelAnimationFrame(b.raf);
+    b.raf = null;
+    $("#fight-aim").hidden = true;
+    $("#fight-skills").hidden = false;
+    const row = $("#skill-row");
+    row.innerHTML = "";
+    for (const name of b.player.keywordsLeft.slice(0, 2)) {
+      const meta = D.KEYWORDS.find((k) => k.name === name);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "skill-btn";
+      const title = document.createElement("span");
+      title.textContent = `${meta ? meta.icon : "✨"} ${name}`;
+      const detail = document.createElement("small");
+      detail.textContent = meta ? meta.desc : "";
+      btn.append(title, detail);
+      btn.addEventListener("click", () => useSkill(name));
+      row.appendChild(btn);
+    }
+  }
+
+  function useSkill(name) {
+    const b = state.battle;
+    if (!b || b.phase !== "skills") return;
+    const effect = D.playKeyword(b.player, b.rival, name);
+    fightLog(effect.log);
+    paintHp();
+    if (checkKo()) return;
+    rivalTurn();
+  }
+
+  function rivalTurn() {
+    const b = state.battle;
+    if (!b || b.phase === "result") return;
+    b.phase = "rival";
+    $("#fight-aim").hidden = true;
+    $("#fight-skills").hidden = true;
+    if (b.timer) clearTimeout(b.timer);
+    b.timer = setTimeout(() => {
+      b.timer = null;
+      if (!state.battle || state.battle !== b || b.phase === "result") return;
+      if (b.rival.skipNext) {
+        b.rival.skipNext = false;
+        fightLog("训练对手的反击被跳过了");
+        beginPlayerTurn();
+        return;
+      }
+      const options = b.rival.keywordsLeft.filter((name) => name !== "Copycat" || b.player.lastKeyword);
+      const pre = ["Finale", "Purrfect", "Zoomies"];
+      let chosen = null;
+      if (options.length && Math.random() < 0.5) chosen = options[0];
+      if (chosen && pre.includes(chosen)) {
+        const effect = D.playKeyword(b.rival, b.player, chosen);
+        fightLog(`训练对手 ${effect.log}`);
+        paintHp();
+        if (checkKo()) return;
+        chosen = null;
+      }
+      const hit = Math.random() < (b.rival.hitChance == null ? 0.62 : b.rival.hitChance);
+      const result = D.launch(b.rival, b.player, hit);
+      fightLog(describeHit("训练对手", result));
+      paintHp();
+      if (checkKo()) return;
+      if (chosen) {
+        const effect = D.playKeyword(b.rival, b.player, chosen);
+        fightLog(`训练对手 ${effect.log}`);
+        paintHp();
+        if (checkKo()) return;
+      }
+      beginPlayerTurn();
+    }, 520);
+  }
+
   /* Wire UI */
   function bind() {
     $$(".nav-item").forEach((btn) => {
@@ -870,6 +1252,17 @@
     $("#notice-close").addEventListener("click", () => { $("#map-notice").hidden = true; });
     $("#pin-preview-close").addEventListener("click", () => { $("#pin-preview").hidden = true; });
     $("#map-locate").addEventListener("click", () => tryGeolocate(true, { fresh: true }));
+    $("#battle-go-scan").addEventListener("click", openScan);
+    $("#battle-start").addEventListener("click", startBattle);
+    $("#fight-tap").addEventListener("click", resolveFightAim);
+    $("#fight-skip").addEventListener("click", () => {
+      if (state.battle && state.battle.phase === "skills") rivalTurn();
+    });
+    $("#battle-again").addEventListener("click", () => {
+      stopFightAim();
+      state.battle = null;
+      renderBattle();
+    });
     setupCanDrag();
 
   }

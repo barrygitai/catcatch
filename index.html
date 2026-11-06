@@ -68,7 +68,7 @@
               <span class="j-value" id="profile-coins">0</span>
             </div>
           </div>
-          <p class="journal-note">这是私人演示版：扫描真猫、收成猫卡。无对战、无商店。</p>
+          <p class="journal-note">这是私人演示版：扫描真猫、收成猫卡。巷战只打训练对手。无商店、无账号。</p>
         </div>
       </section>
 
@@ -108,6 +108,61 @@
           <button type="button" class="pin-preview-x" id="pin-preview-close">×</button>
         </div>
       </section>
+
+      <!-- 对战 -->
+      <section id="tab-battle" class="tab-panel" hidden>
+        <header class="battle-head">
+          <p class="eyebrow">ALLEY CLASH</p>
+          <h2>巷战</h2>
+          <p class="battle-sub" id="battle-sub">训练对手 · 猫会留在图鉴里</p>
+        </header>
+        <div id="battle-empty" class="empty-state" hidden>
+          <div class="empty-paw">⚔️</div>
+          <p>先去抓一只猫再来对战</p>
+          <button type="button" class="battle-cta" id="battle-go-scan">去扫描</button>
+          <p class="battle-hint">或点爪印后的「用演示猫试一次」</p>
+        </div>
+        <div id="battle-setup" hidden>
+          <div class="crew-slots" id="crew-slots"></div>
+          <p class="crew-help">已选好默认阵容。点贴纸可改：1 名领队，最多 2 名支援。</p>
+          <div class="crew-picker" id="crew-picker"></div>
+          <button type="button" class="battle-cta" id="battle-start">开始训练</button>
+        </div>
+        <div id="battle-fight" hidden>
+          <div class="hp-row">
+            <div class="hp-side">
+              <span id="fight-you-name">你</span>
+              <div class="hp-track"><div class="hp-fill you" id="fight-you-hp"></div></div>
+              <b id="fight-you-num">0</b>
+            </div>
+            <div class="hp-side foe">
+              <span id="fight-foe-name">训练对手</span>
+              <div class="hp-track"><div class="hp-fill foe" id="fight-foe-hp"></div></div>
+              <b id="fight-foe-num">0</b>
+            </div>
+          </div>
+          <div class="fight-log" id="fight-log"></div>
+          <div id="fight-aim">
+            <p class="fight-prompt" id="fight-prompt">准星进入绿色时点屏幕</p>
+            <div class="aim-bar inline" id="fight-bar">
+              <div class="aim-green" id="fight-green"></div>
+              <div class="aim-marker" id="fight-marker"></div>
+            </div>
+            <button type="button" class="battle-cta" id="fight-tap">出击</button>
+          </div>
+          <div id="fight-skills" hidden>
+            <p class="fight-prompt">技能间歇 · 选一张支援</p>
+            <div class="skill-row" id="skill-row"></div>
+            <button type="button" class="battle-ghost" id="fight-skip">先不支援</button>
+          </div>
+        </div>
+        <div id="battle-result" class="battle-result" hidden>
+          <h3 id="battle-result-title">巷战胜利</h3>
+          <p id="battle-result-reward"></p>
+          <p class="battle-hint">猫都还在图鉴里。</p>
+          <button type="button" class="battle-cta" id="battle-again">再来一局</button>
+        </div>
+      </section>
     </main>
 
     <!-- Bottom nav -->
@@ -127,7 +182,10 @@
         <span class="nav-ico">🗺️</span>
         <span>地图</span>
       </button>
-      <span class="nav-spacer" aria-hidden="true"></span>
+      <button type="button" class="nav-item" data-tab="battle">
+        <span class="nav-ico">⚔️</span>
+        <span>对战</span>
+      </button>
     </nav>
 
     <!-- SCAN overlay -->

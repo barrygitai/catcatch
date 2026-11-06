@@ -34,15 +34,19 @@ window.CatchData = (() => {
   ];
 
   const KEYWORDS = [
-    { name: "Guard", icon: "🛡️", desc: "你的猫在这里不会被敌方诡计或技能打中。" },
-    { name: "Copycat", icon: "🐱", desc: "复制上一张打出的能力，原样再来一次。" },
-    { name: "Finale", icon: "🎆", desc: "最后一轮：再抽一张牌作为终局一击。" },
-    { name: "Snacktime", icon: "🥫", desc: "每回合开始时，零食值 +1。" },
-    { name: "Purrfect", icon: "😻", desc: "魅力判定时，额外掷一次并取较高结果。" },
-    { name: "Nap", icon: "😴", desc: "跳过一回合，下回合零食与魅力翻倍。" },
-    { name: "Zoomies", icon: "💨", desc: "立刻再行动一次，但本回合魅力 -2。" },
-    { name: "Loaf", icon: "🍞", desc: "保持不动时，受到的伤害减半。" }
+    { name: "Guard", icon: "🛡️", desc: "挡下对手的下一次攻击。" },
+    { name: "Copycat", icon: "🐱", desc: "复制对手刚打出的关键词，效果再来一次。" },
+    { name: "Finale", icon: "🎆", desc: "这次出击后再补一记终局一击。" },
+    { name: "Snacktime", icon: "🥫", desc: "接下来每次出击，零食伤害 +1。" },
+    { name: "Purrfect", icon: "😻", desc: "下次出击掷两次伤害，取较高的一次。" },
+    { name: "Nap", icon: "😴", desc: "跳过对手的反击，下次出击伤害翻倍。" },
+    { name: "Zoomies", icon: "💨", desc: "本回合立刻再出击一次，魅力 -2。" },
+    { name: "Loaf", icon: "🍞", desc: "直到下次出击，受到的伤害减半。" }
   ];
+
+  const RARITY_ORDER = ["Alley", "Garden", "Moonlit", "Velvet", "Golden"];
+  const RARITY_HP = { Alley: 0, Garden: 6, Moonlit: 12, Velvet: 18, Golden: 26 };
+  const TRAINING_CREWS = ["Miso Patrol", "Tin Drill", "Alley Warmup", "Biscuit Watch"];
 
   // Lat/lng here are only the shape of the sample cluster. The map recenters
   // them on the player's fix; they are not a city to open on.
@@ -161,9 +165,206 @@ window.CatchData = (() => {
     return (xp % 100) / 100;
   }
 
+  function clamp(n, lo, hi) {
+    return Math.max(lo, Math.min(hi, n));
+  }
+
+  function rarityRank(id) {
+    const i = RARITY_ORDER.indexOf(id);
+    return i < 0 ? 0 : i;
+  }
+
+  function crewHp(cat) {
+    const charm = cat && cat.charm ? cat.charm : 0;
+    const bonus = RARITY_HP[cat && cat.rarity] || 0;
+    return 20 + charm * 3 + bonus;
+  }
+
+  function supportKeywords(supports) {
+    const names = [];
+    for (const cat of supports || []) {
+      for (const kw of cat.keywords || []) {
+        if (!names.includes(kw.name)) names.push(kw.name);
+      }
+    }
+    return names;
+  }
+
+  function makeFighter(crew, hitChance) {
+    const lead = crew.lead;
+    const max = crewHp(lead);
+    return {
+      lead,
+      supports: crew.supports || [],
+      hp: max,
+      max,
+      snackBonus: 0,
+      guard: false,
+      loaf: false,
+      doubleNext: false,
+      purrfectNext: false,
+      skipNext: false,
+      finale: false,
+      keywordsLeft: supportKeywords(crew.supports),
+      used: [],
+      lastKeyword: null,
+      hitChance: hitChance == null ? 1 : hitChance
+    };
+  }
+
+  function rollStrike(lead, mods) {
+    const snack = Math.max(1, (lead.snack || 1) + (mods.snackBonus || 0));
+    const charm = Math.max(0, (lead.charm || 0) + (mods.charmMod || 0));
+    const span = Math.max(1, Math.min(3, Math.ceil(charm / 3) || 1));
+    const vary = () => Math.floor(Math.random() * (span + 1));
+    let dmg = snack + vary();
+    if (mods.purrfect) dmg = Math.max(dmg, snack + vary());
+    if (!mods.hit) dmg = Math.max(1, Math.round(dmg * 0.4));
+    if (mods.double) dmg *= 2;
+    return dmg;
+  }
+
+  function applyIncoming(target, amount) {
+    let dmg = amount;
+    const notes = [];
+    if (target.guard) {
+      target.guard = false;
+      notes.push("Guard");
+      dmg = 0;
+    } else if (target.loaf) {
+      dmg = Math.max(1, Math.floor(dmg / 2));
+      notes.push("Loaf");
+    }
+    target.hp = Math.max(0, target.hp - dmg);
+    return { dmg, notes };
+  }
+
+  function launch(attacker, defender, hit, extraMods) {
+    if (attacker.loaf) attacker.loaf = false;
+    const mods = Object.assign({
+      hit: !!hit,
+      snackBonus: attacker.snackBonus,
+      charmMod: 0,
+      double: attacker.doubleNext,
+      purrfect: attacker.purrfectNext
+    }, extraMods || {});
+    attacker.doubleNext = false;
+    attacker.purrfectNext = false;
+    const rolled = rollStrike(attacker.lead, mods);
+    const landed = applyIncoming(defender, rolled);
+    return { hit: !!hit, rolled, dmg: landed.dmg, notes: landed.notes, extra: null };
+  }
+
+  function applyKeywordEffect(actor, foe, name, fromCopy) {
+    if (name === "Copycat") {
+      const copied = foe.lastKeyword;
+      if (fromCopy || !copied || copied === "Copycat") {
+        return { ok: true, log: "Copycat：没有可复制的技能" };
+      }
+      const inner = applyKeywordEffect(actor, foe, copied, true);
+      return { ok: true, log: `Copycat：复制了 ${copied}。${inner.log}` };
+    }
+    if (name === "Guard") {
+      actor.guard = true;
+      return { ok: true, log: "Guard：挡下对手的下一次攻击" };
+    }
+    if (name === "Finale") {
+      const fin = rollStrike(actor.lead, { hit: true, snackBonus: actor.snackBonus });
+      const landed = applyIncoming(foe, fin);
+      return { ok: true, log: `Finale：终局一击造成 ${landed.dmg} 点伤害` };
+    }
+    if (name === "Snacktime") {
+      actor.snackBonus += 1;
+      return { ok: true, log: "Snacktime：接下来出击零食 +1" };
+    }
+    if (name === "Purrfect") {
+      actor.purrfectNext = true;
+      return { ok: true, log: "Purrfect：下次出击掷两次，取较高" };
+    }
+    if (name === "Nap") {
+      foe.skipNext = true;
+      actor.doubleNext = true;
+      return { ok: true, log: "Nap：对手跳过反击，下次出击翻倍" };
+    }
+    if (name === "Zoomies") {
+      if (actor.loaf) actor.loaf = false;
+      const rolled = rollStrike(actor.lead, {
+        hit: true,
+        snackBonus: actor.snackBonus,
+        charmMod: -2
+      });
+      const landed = applyIncoming(foe, rolled);
+      return { ok: true, log: `Zoomies：再冲一次（魅力 -2），造成 ${landed.dmg} 点伤害`, landed };
+    }
+    if (name === "Loaf") {
+      actor.loaf = true;
+      return { ok: true, log: "Loaf：直到下次出击，受到的伤害减半" };
+    }
+    return { ok: false, log: "未知技能" };
+  }
+
+  function playKeyword(actor, foe, name) {
+    if (!actor.keywordsLeft.includes(name) || actor.used.includes(name)) {
+      return { ok: false, log: "这张支援已经用过了" };
+    }
+    actor.keywordsLeft = actor.keywordsLeft.filter((k) => k !== name);
+    actor.used.push(name);
+    const effect = applyKeywordEffect(actor, foe, name, false);
+    if (name !== "Copycat") actor.lastKeyword = name;
+    else if (foe.lastKeyword) actor.lastKeyword = foe.lastKeyword;
+    return effect;
+  }
+
+  function tunedRarityId(playerRarity, slot) {
+    let idx = rarityRank(playerRarity);
+    const shift = slot === 0 ? (Math.random() < 0.4 ? 0 : -1) : (Math.random() < 0.55 ? -1 : 0);
+    idx = clamp(idx + shift, 0, RARITY_ORDER.length - 1);
+    return RARITY_ORDER[idx];
+  }
+
+  function createTrainingMatch(albumCats, crew) {
+    const lead = crew.lead;
+    const used = (albumCats || []).map((c) => c.name);
+    const rivalCats = [];
+    for (let i = 0; i < 3; i++) {
+      const cat = generateCat({
+        photo: pick(DEMO_PHOTOS),
+        serial: 0,
+        demo: true,
+        usedNames: used,
+        rarity: tunedRarityId(lead && lead.rarity, i)
+      });
+      if (lead) {
+        const snackSlack = i === 0 ? 1 : 0;
+        cat.snack = clamp((lead.snack || 4) + Math.floor(Math.random() * (snackSlack + 2)) - 1, 2, 9);
+        cat.charm = clamp((lead.charm || 4) + Math.floor(Math.random() * 3) - 1, 2, 10);
+      }
+      used.push(cat.name);
+      rivalCats.push(cat);
+    }
+    const crewName = pick(TRAINING_CREWS);
+    return {
+      crewName,
+      rivalCats,
+      player: makeFighter({ lead, supports: crew.supports || [] }, 1),
+      rival: makeFighter({ lead: rivalCats[0], supports: rivalCats.slice(1) }, 0.62)
+    };
+  }
+
+  function defaultCrew(cats) {
+    const ranked = [...(cats || [])].sort((a, b) => {
+      const byRarity = rarityRank(b.rarity) - rarityRank(a.rarity);
+      if (byRarity) return byRarity;
+      return ((b.snack || 0) + (b.charm || 0)) - ((a.snack || 0) + (a.charm || 0));
+    });
+    return { lead: ranked[0] || null, supports: ranked.slice(1, 3) };
+  }
+
   return {
     RARITIES, TYPES, KEYWORDS, SAMPLE_SIGHTINGS, DEMO_PHOTOS,
+    RARITY_ORDER, RARITY_HP,
     generateName, generateCat, weightedRarity, formatSerial,
-    levelFromXp, xpProgress, pick
+    levelFromXp, xpProgress, pick, rarityRank, crewHp,
+    makeFighter, rollStrike, launch, playKeyword, createTrainingMatch, defaultCrew
   };
 })();
