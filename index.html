@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="CatchCat" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#F46A1F" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="assets/icon-180.png" />
+  <link rel="icon" href="assets/icon-192.png" />
+  <title>CatchCat 演示 · 遇猫收集</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="phone" class="phone">
+    <!-- Toast -->
+    <div id="toast" class="toast" hidden></div>
+
+    <!-- Main tabs -->
+    <main id="app" class="app">
+      <!-- 档案 -->
+      <section id="tab-profile" class="tab-panel" hidden>
+        <div class="journal-hero">
+          <div class="journal-logo">
+            <span class="logo-mark">🐱</span>
+            <span class="logo-text">CatchCat</span>
+          </div>
+          <div class="journal-avatar">
+            <div class="avatar-bubble">🐈</div>
+            <div class="level-row">
+              <span class="lvl-pill" id="profile-lvl">LVL 1</span>
+              <div class="xp-bar"><div class="xp-fill" id="profile-xp-fill"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="journal-card">
+          <div class="journal-head">
+            <div>
+              <p class="eyebrow">SIGHTINGS LOGGED</p>
+              <h2>野外日志</h2>
+            </div>
+            <div class="big-count" id="profile-count">0</div>
+          </div>
+          <div class="journal-rows">
+            <div class="j-row j-row-gold">
+              <span class="j-idx">01</span>
+              <span class="j-icon">⭐</span>
+              <span class="j-label">最稀有</span>
+              <span class="j-value" id="profile-rarest">—</span>
+            </div>
+            <div class="j-row j-row-orange">
+              <span class="j-idx">02</span>
+              <span class="j-icon">📷</span>
+              <span class="j-label">今日</span>
+              <span class="j-value" id="profile-today">0</span>
+            </div>
+            <div class="j-row j-row-cream">
+              <span class="j-idx">03</span>
+              <span class="j-icon">🪙</span>
+              <span class="j-label">金币</span>
+              <span class="j-value" id="profile-coins">0</span>
+            </div>
+          </div>
+          <p class="journal-note">这是私人演示版：扫描真猫、收成猫卡。无对战、无商店。</p>
+        </div>
+      </section>
+
+      <!-- 图鉴 -->
+      <section id="tab-album" class="tab-panel">
+        <header class="top-resources">
+          <div class="resource-pill" id="resource-pill">
+            <span class="res"><img src="assets/cat-food-can.png" alt="" class="can-ico" /><b id="res-cans">8</b></span>
+            <span class="res"><span class="coin-ico">🪙</span><b id="res-coins">0</b></span>
+            <span class="res"><span class="xp-ico">✨</span><b id="res-xp">0</b></span>
+          </div>
+        </header>
+        <div class="album-scroll" id="album-grid">
+          <div class="empty-state" id="album-empty">
+            <div class="empty-paw">🐾</div>
+            <p>还没有猫。<br />点下面的爪印去识别一只。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 地图 -->
+      <section id="tab-map" class="tab-panel" hidden>
+        <div id="map" class="map-el"></div>
+        <button type="button" class="map-locate" id="map-locate" title="定位">⌖</button>
+        <div class="map-notice" id="map-notice">
+          <div class="notice-head"><span>⚠️</span><strong>安全提示</strong>
+            <button type="button" class="notice-x" id="notice-close">×</button>
+          </div>
+          <p>地图上的猫是玩家过去的遇猫记录，不是说猫现在还在那儿。只在你所在的位置扫描，注意安全，不要进私人区域或禁止入内的地方。</p>
+        </div>
+        <div class="pin-preview" id="pin-preview" hidden>
+          <img id="pin-preview-img" alt="" />
+          <div>
+            <strong id="pin-preview-name"></strong>
+            <span id="pin-preview-meta"></span>
+          </div>
+          <button type="button" class="pin-preview-x" id="pin-preview-close">×</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom nav -->
+    <nav class="bottom-nav" id="bottom-nav">
+      <button type="button" class="nav-item" data-tab="profile">
+        <span class="nav-ico">👤</span>
+        <span>档案</span>
+      </button>
+      <button type="button" class="nav-item active" data-tab="album">
+        <span class="nav-ico">📦</span>
+        <span>图鉴</span>
+      </button>
+      <button type="button" class="nav-paw" id="btn-scan" aria-label="扫描">
+        <span class="paw-circle">🐾</span>
+      </button>
+      <button type="button" class="nav-item" data-tab="map">
+        <span class="nav-ico">🗺️</span>
+        <span>地图</span>
+      </button>
+      <span class="nav-spacer" aria-hidden="true"></span>
+    </nav>
+
+    <!-- SCAN overlay -->
+    <section id="scan-screen" class="overlay scan-screen" hidden>
+      <video id="scan-video" playsinline muted autoplay></video>
+      <canvas id="scan-canvas" hidden></canvas>
+      <img id="demo-frame" class="demo-frame" alt="" hidden />
+      <div class="scan-ui">
+        <button type="button" class="scan-close" id="scan-close">×</button>
+        <div class="scan-top-pill">
+          <img src="assets/cat-food-can.png" alt="" class="can-ico" />
+          <b id="scan-tries">3 / 3 次</b>
+          <span class="pill-div"></span>
+          <b id="scan-cans">8</b>
+        </div>
+        <p class="scan-hint" id="scan-hint">拖动罐头，对准后松手</p>
+        <div class="scan-brackets" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <div class="flash-panel" id="flash-panel" hidden>
+          <span class="bulb">💡</span>
+          <button type="button" class="flash-auto" id="flash-toggle">AUTO</button>
+        </div>
+        <div class="can-drag-wrap" id="can-drag-wrap">
+          <img src="assets/cat-food-can.png" alt="CAT FOOD" class="can-drag" id="can-drag" draggable="false" />
+        </div>
+        <button type="button" class="demo-btn" id="demo-btn">用演示猫试一次</button>
+      </div>
+
+      <!-- Minigame overlay -->
+      <div id="minigame" class="minigame" hidden>
+        <div class="mg-sky">
+          <button type="button" class="scan-close mg-close" id="mg-cancel-x">×</button>
+          <p class="mg-title">附近有社区遇猫记录！</p>
+          <p class="mg-tier" id="mg-tier">Alley Tier</p>
+          <div class="scan-top-pill mg-pill">
+            <img src="assets/cat-food-can.png" alt="" class="can-ico" />
+            <b id="mg-tries">3 / 3 次</b>
+            <span class="pill-div"></span>
+            <b id="mg-cans">8</b>
+          </div>
+          <p class="mg-lineup">对准零食</p>
+          <div class="mg-island">
+            <div class="mg-box">📦👀</div>
+          </div>
+          <img src="assets/cat-food-can.png" alt="" class="mg-can" id="mg-can" />
+          <p class="mg-release">在绿色区域松手，开始扫描</p>
+          <div class="aim-bar" id="aim-bar">
+            <div class="aim-green" id="aim-green"></div>
+            <div class="aim-marker" id="aim-marker"></div>
+          </div>
+          <button type="button" class="mg-cancel" id="mg-cancel">✕ 取消</button>
+        </div>
+      </div>
+
+      <div id="detecting" class="detecting" hidden>
+        <div class="detect-spinner"></div>
+        <p>正在识别猫咪…</p>
+      </div>
+    </section>
+
+    <!-- FOUND overlay -->
+    <section id="found-screen" class="overlay found-screen" hidden>
+      <div class="found-stars" id="found-stars"></div>
+      <div class="found-sticker-wrap">
+        <img id="found-photo" class="found-sticker" alt="cat" />
+      </div>
+      <div class="found-card">
+        <h2>★ CAT FOUND ★</h2>
+        <div class="dot-row">······</div>
+        <p class="found-name" id="found-name">Loafus Maximus</p>
+        <div class="found-rewards">
+          <span class="rew" id="found-xp">XP +100</span>
+          <span class="rew" id="found-coins">🪙 +9</span>
+        </div>
+        <span class="found-serial" id="found-serial">#000001</span>
+      </div>
+      <button type="button" class="found-continue" id="found-continue">点此继续</button>
+    </section>
+
+    <!-- CARD detail overlay -->
+    <section id="card-screen" class="overlay card-screen" hidden>
+      <button type="button" class="card-close" id="card-close">← 关闭</button>
+      <article class="keepsake" id="keepsake">
+        <header class="ks-head">
+          <h2 id="card-name">Count Royal Stinker</h2>
+          <span id="card-serial">#0001</span>
+        </header>
+        <div class="ks-photo-wrap">
+          <img id="card-photo" alt="" />
+          <span class="ks-rarity" id="card-rarity">Alley</span>
+        </div>
+        <div class="ks-type" id="card-type">Iconic Cat · Orange</div>
+        <div class="ks-keywords" id="card-keywords"></div>
+        <p class="ks-ability"><span>ABILITY</span> <em id="card-ability"></em></p>
+        <div class="ks-stats">
+          <div class="stat snack"><span class="stat-ico">⚡</span><b id="card-snack">6</b><small>SNACK</small></div>
+          <div class="stat charm"><span class="stat-ico">🐾</span><b id="card-charm">9</b><small>CHARM</small></div>
+        </div>
+      </article>
+      <div class="keyword-detail" id="keyword-detail"></div>
+    </section>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="js/data.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
