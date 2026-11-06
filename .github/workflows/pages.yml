@@ -24,31 +24,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Publish the repository and enable Pages
+      - name: Make the repo public and point Pages at Actions
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
           repo="${GITHUB_REPOSITORY}"
 
-          # A phone should be able to open the demo without a GitHub login.
-          # The workflow token often lacks administration permission; keep going
-          # so the Pages deploy can still be attempted.
-          if gh api --method PATCH "repos/${repo}" -f visibility=public --silent; then
+          # Strangers need a public repo to open the GitHub Pages URL.
+          # GITHUB_TOKEN cannot change visibility; a 403 here is expected
+          # unless a token with administration permission is used.
+          if gh api --method PATCH "repos/${repo}" -f visibility=public; then
             echo "Repository visibility is public."
           else
-            echo "Could not change repository visibility with this token."
+            echo "Visibility was not changed."
           fi
 
-          if ! gh api "repos/${repo}/pages" --silent; then
-            gh api --method POST "repos/${repo}/pages" \
-              -f build_type=workflow \
-              -f "source[branch]=main" \
-              -f "source[path]=/"
+          if gh api "repos/${repo}/pages" --jq .build_type; then
+            gh api --method PUT "repos/${repo}/pages" -f build_type=workflow || echo "Could not set Pages build_type."
+          else
+            gh api --method POST "repos/${repo}/pages" -f build_type=workflow \
+              || echo "Could not create the Pages site. An admin must enable Pages (GitHub Actions) once."
           fi
-          gh api --method PUT "repos/${repo}/pages" -f build_type=workflow
 
       - name: Setup Pages
+        id: pages
+        continue-on-error: true
         uses: actions/configure-pages@v5
 
       - name: Upload site root
