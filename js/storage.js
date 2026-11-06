@@ -1,9 +1,9 @@
 /* CatchCat demo — localStorage persistence */
 window.CatchStore = (() => {
-  const KEY = "catchcat_demo_v1";
-  const CAN_CAP = 12;
-  const CAN_START = 8;
-  const RECHARGE_MS = 10 * 60 * 1000; // +1 can every 10 minutes
+  const KEY = "catchcat_demo_v2";
+  const CAN_CAP = 24;
+  const CAN_START = 20;
+  const RECHARGE_MS = 3 * 60 * 1000; // +1 can every 3 minutes
 
   function defaults() {
     return {
@@ -12,7 +12,9 @@ window.CatchStore = (() => {
       nextSerial: 1,
       lastCanRechargeAt: Date.now(),
       todayKey: dayKey(),
-      todayCount: 0
+      todayCount: 0,
+      lifetimeMinigames: 0,
+      freeMissRounds: 0
     };
   }
 
@@ -33,6 +35,8 @@ window.CatchStore = (() => {
     data.cats = Array.isArray(data.cats) ? data.cats : [];
     data.nextSerial = data.nextSerial || 1;
     data.lastCanRechargeAt = data.lastCanRechargeAt || Date.now();
+    if (typeof data.lifetimeMinigames !== "number") data.lifetimeMinigames = 0;
+    if (typeof data.freeMissRounds !== "number") data.freeMissRounds = 0;
     applyRecharge(data);
     rollToday(data);
     save(data);

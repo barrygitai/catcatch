@@ -76,7 +76,7 @@
       <section id="tab-album" class="tab-panel">
         <header class="top-resources">
           <div class="resource-pill" id="resource-pill">
-            <span class="res"><img src="assets/cat-food-can.png" alt="" class="can-ico" /><b id="res-cans">8</b></span>
+            <span class="res"><img src="assets/cat-food-can.png" alt="" class="can-ico" /><b id="res-cans">20</b></span>
             <span class="res"><span class="coin-ico">🪙</span><b id="res-coins">0</b></span>
             <span class="res"><span class="xp-ico">✨</span><b id="res-xp">0</b></span>
           </div>
@@ -84,7 +84,7 @@
         <div class="album-scroll" id="album-grid">
           <div class="empty-state" id="album-empty">
             <div class="empty-paw">🐾</div>
-            <p>还没有猫。<br />点下面的爪印去识别一只。</p>
+            <p>还没有猫。<br />点下面的爪印去识别一只，<br />或点爪印后的「用演示猫试一次」。</p>
           </div>
         </div>
       </section>
@@ -141,9 +141,9 @@
           <img src="assets/cat-food-can.png" alt="" class="can-ico" />
           <b id="scan-tries">3 / 3 次</b>
           <span class="pill-div"></span>
-          <b id="scan-cans">8</b>
+          <b id="scan-cans">20</b>
         </div>
-        <p class="scan-hint" id="scan-hint">拖动罐头，对准后松手</p>
+        <p class="scan-hint" id="scan-hint">点一下或拖动罐头，开始瞄准</p>
         <div class="scan-brackets" aria-hidden="true">
           <span></span><span></span><span></span><span></span>
         </div>
@@ -167,14 +167,14 @@
             <img src="assets/cat-food-can.png" alt="" class="can-ico" />
             <b id="mg-tries">3 / 3 次</b>
             <span class="pill-div"></span>
-            <b id="mg-cans">8</b>
+            <b id="mg-cans">20</b>
           </div>
           <p class="mg-lineup">对准零食</p>
           <div class="mg-island">
             <div class="mg-box">📦👀</div>
           </div>
           <img src="assets/cat-food-can.png" alt="" class="mg-can" id="mg-can" />
-          <p class="mg-release">在绿色区域松手，开始扫描</p>
+          <p class="mg-release" id="mg-release">准星进入绿色时点屏幕</p>
           <div class="aim-bar" id="aim-bar">
             <div class="aim-green" id="aim-green"></div>
             <div class="aim-marker" id="aim-marker"></div>
@@ -211,6 +211,7 @@
     <!-- CARD detail overlay -->
     <section id="card-screen" class="overlay card-screen" hidden>
       <button type="button" class="card-close" id="card-close">← 关闭</button>
+      <p class="card-coach" id="card-coach" hidden>这是你的猫卡。</p>
       <article class="keepsake" id="keepsake">
         <header class="ks-head">
           <h2 id="card-name">Count Royal Stinker</h2>
@@ -224,8 +225,8 @@
         <div class="ks-keywords" id="card-keywords"></div>
         <p class="ks-ability"><span>ABILITY</span> <em id="card-ability"></em></p>
         <div class="ks-stats">
-          <div class="stat snack"><span class="stat-ico">⚡</span><b id="card-snack">6</b><small>SNACK</small></div>
-          <div class="stat charm"><span class="stat-ico">🐾</span><b id="card-charm">9</b><small>CHARM</small></div>
+          <div class="stat snack"><span class="stat-ico">⚡</span><b id="card-snack">6</b><small>零食缘</small></div>
+          <div class="stat charm"><span class="stat-ico">🐾</span><b id="card-charm">9</b><small>上镜</small></div>
         </div>
       </article>
       <div class="keyword-detail" id="keyword-detail"></div>

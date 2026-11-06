@@ -732,6 +732,13 @@ body {
   width: 22%;
   background: var(--green-zone);
 }
+.aim-green.coach {
+  animation: green-pulse .8s ease-in-out infinite;
+}
+@keyframes green-pulse {
+  0%, 100% { filter: saturate(1) brightness(1); }
+  50% { filter: saturate(1.35) brightness(1.4); }
+}
 .aim-marker {
   position: absolute;
   top: 3px; bottom: 3px;
@@ -742,6 +749,10 @@ body {
   border: 2px solid var(--ink);
   border-radius: 8px;
   box-shadow: 0 0 0 2px #fff;
+}
+.aim-marker.frozen {
+  background: #e23b2f;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #e23b2f;
 }
 .mg-cancel {
   position: absolute;
@@ -897,6 +908,17 @@ body {
   overflow: auto;
   padding: 16px 16px 40px;
   -webkit-overflow-scrolling: touch;
+}
+.card-coach {
+  margin: 0 0 12px;
+  background: #fff;
+  border: 2.5px solid var(--ink);
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-weight: 800;
+  font-size: 14px;
+  text-align: center;
+  box-shadow: 0 3px 0 rgba(0,0,0,.08);
 }
 .card-close {
   display: inline-flex;

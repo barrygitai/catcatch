@@ -37,16 +37,16 @@ http://127.0.0.1:8765/
 
 ## 数据
 
-全部存在浏览器 `localStorage`（键 `catchcat_demo_v1`）：
+全部存在浏览器 `localStorage`（键 `catchcat_demo_v2`）：
 
 - `cats[]`、`resources { cans, coins, xp }`、`nextSerial`、`lastCanRechargeAt`
-- 罐头初始 8，上限 12；约每 10 分钟回复 1 罐
+- 罐头初始 20，上限 24；约每 3 分钟回复 1 罐
 
 ## 限制
 
 - 真机识别依赖 TensorFlow.js coco-ssd（CDN），首次需联网下载模型
 - 相机需要 HTTPS 或 localhost，以及用户授权；手电筒仅在支持 `torch` 的设备上显示
-- 定位用于地图居中与打点；拒绝定位时默认杭州
+- 定位只留在浏览器里，用来把地图和示例针脚放到你附近；拒绝定位时不会落到别的城市
 - 无对战、无商店、无账号、无支付
 
 ## 文件

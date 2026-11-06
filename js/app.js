@@ -21,10 +21,17 @@
     mapReady: false,
     userLat: null,
     userLng: null,
+    geoStatus: null,
+    geoInflight: null,
+    mapHasView: false,
+    tiles: null,
     markers: [],
     aimRaf: null,
     aimPos: 0,
     aimDir: 1,
+    aimFrozen: false,
+    missTimer: null,
+    pendingRarity: null,
     dragging: false
   };
 
@@ -68,10 +75,15 @@
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = `sticker-card rarity-${cat.rarity}`;
-      btn.innerHTML = `
-        <img class="sticker-img" src="${cat.photo}" alt="${escapeAttr(cat.name)}" />
-        <span class="sticker-label"><span>${escapeHtml(cat.name)}</span><i class="paw">🐾</i></span>
-      `;
+      const img = document.createElement("img");
+      img.className = "sticker-img";
+      img.src = cat.photo;
+      img.alt = cat.name;
+      applyPhotoStyle(img, cat.stickerStyle);
+      const label = document.createElement("span");
+      label.className = "sticker-label";
+      label.innerHTML = `<span>${escapeHtml(cat.name)}</span><i class="paw">🐾</i>`;
+      btn.append(img, label);
       btn.addEventListener("click", () => showCard(cat));
       grid.appendChild(btn);
     }
@@ -106,7 +118,33 @@
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
     }[c]));
   }
-  function escapeAttr(s) { return escapeHtml(s); }
+
+  function applyPhotoStyle(img, style) {
+    if (!style) {
+      img.style.objectPosition = "";
+      img.style.filter = "";
+      img.style.transform = "";
+      return;
+    }
+    img.style.objectPosition = style.objectPosition || "center";
+    img.style.filter = style.filter || "";
+    img.style.transform = style.rotate ? `rotate(${style.rotate})` : "";
+  }
+
+  function isCoaching() {
+    const n = state.data.lifetimeMinigames || 0;
+    return n > 0 && n <= 3;
+  }
+
+  function clearMissTimer() {
+    if (state.missTimer) {
+      clearTimeout(state.missTimer);
+      state.missTimer = null;
+    }
+    state.aimFrozen = false;
+    const marker = $("#aim-marker");
+    if (marker) marker.classList.remove("frozen");
+  }
 
   /* ---------- Map ---------- */
   function ensureMap() {
@@ -115,56 +153,144 @@
         zoomControl: false,
         attributionControl: true
       });
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: "&copy; OpenStreetMap"
-      }).addTo(state.map);
       state.mapReady = true;
-      // Hangzhou default
-      state.map.setView([30.2741, 120.1551], 14);
+    }
+    if (state.userLat != null && state.userLng != null) {
+      if (!state.mapHasView) focusMapOnUser();
+      else setTimeout(() => state.map && state.map.invalidateSize(), 80);
+      refreshMapPins();
+    } else {
+      clearPins();
       tryGeolocate(true);
     }
-    setTimeout(() => state.map.invalidateSize(), 80);
-    refreshMapPins();
   }
 
-  function tryGeolocate(center) {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        state.userLat = pos.coords.latitude;
-        state.userLng = pos.coords.longitude;
-        if (center && state.map) {
-          state.map.setView([state.userLat, state.userLng], 15);
-        }
-      },
-      () => {},
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
+  function ensureTiles() {
+    if (!state.map || state.tiles) return;
+    state.tiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap"
+    }).addTo(state.map);
+  }
+
+  function focusMapOnUser() {
+    if (!state.map || state.userLat == null || state.userLng == null) return;
+    state.map.setView([state.userLat, state.userLng], 15);
+    state.mapHasView = true;
+    ensureTiles();
+    setTimeout(() => state.map && state.map.invalidateSize(), 80);
+  }
+
+  function tryGeolocate(center, opts = {}) {
+    if (!opts.fresh && state.userLat != null && state.userLng != null) {
+      if (center) focusMapOnUser();
+      if (state.mapHasView) refreshMapPins();
+      return Promise.resolve(true);
+    }
+    if (!navigator.geolocation) {
+      state.geoStatus = "unsupported";
+      toast("需要定位才能把地图放到你附近");
+      return Promise.resolve(false);
+    }
+    if (state.geoInflight) {
+      return state.geoInflight.then((ok) => {
+        if (ok && center) focusMapOnUser();
+        if (ok && state.mapHasView) refreshMapPins();
+        return ok;
+      });
+    }
+    state.geoStatus = "pending";
+    state.geoInflight = new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          state.userLat = pos.coords.latitude;
+          state.userLng = pos.coords.longitude;
+          state.geoStatus = "ok";
+          state.geoInflight = null;
+          if (center || (state.map && !state.mapHasView)) focusMapOnUser();
+          if (state.mapHasView) refreshMapPins();
+          resolve(true);
+        },
+        () => {
+          state.geoStatus = "denied";
+          state.geoInflight = null;
+          toast("需要定位才能把地图放到你附近");
+          resolve(false);
+        },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: opts.fresh ? 0 : 60000 }
+      );
+    });
+    return state.geoInflight;
+  }
+
+  function clearPins() {
+    state.markers.forEach((m) => m.remove());
+    state.markers = [];
+  }
+
+  function pinOffset(id) {
+    let h = 2166136261;
+    const str = String(id || "");
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    const u = (h >>> 0) / 4294967295;
+    const v = ((h >>> 8) & 0xffff) / 65535;
+    return { lat: (u - 0.5) * 0.012, lng: (v - 0.5) * 0.012 };
   }
 
   function refreshMapPins() {
-    if (!state.map) return;
-    state.markers.forEach((m) => m.remove());
-    state.markers = [];
-
-    const center = state.map.getCenter();
-    const baseLat = state.userLat ?? center.lat;
-    const baseLng = state.userLng ?? center.lng;
-
-    for (const s of D.SAMPLE_SIGHTINGS) {
-      addPin(s.lat, s.lng, s.photo, s.name, "社区记录 · 示例", true);
+    if (!state.map || !state.mapHasView || state.userLat == null || state.userLng == null) return;
+    clearPins();
+    const baseLat = state.userLat;
+    const baseLng = state.userLng;
+    const origin = D.SAMPLE_SIGHTINGS[0];
+    if (origin) {
+      for (const s of D.SAMPLE_SIGHTINGS) {
+        addPin(
+          baseLat + (s.lat - origin.lat),
+          baseLng + (s.lng - origin.lng),
+          s.photo,
+          s.name,
+          "社区记录 · 示例",
+          true
+        );
+      }
     }
-
     for (const cat of state.data.cats) {
       let lat = cat.lat;
       let lng = cat.lng;
       if (lat == null || lng == null) {
-        lat = baseLat + (Math.random() - 0.5) * 0.012;
-        lng = baseLng + (Math.random() - 0.5) * 0.012;
+        const shift = pinOffset(cat.id);
+        lat = baseLat + shift.lat;
+        lng = baseLng + shift.lng;
       }
       addPin(lat, lng, cat.photo, cat.name, `${cat.rarity} · ${D.formatSerial(cat.serial)}`, false, cat);
     }
+  }
+
+  async function captureCoords() {
+    if (state.userLat == null || state.userLng == null) {
+      const pending = state.geoInflight
+        || (state.geoStatus === "denied" || state.geoStatus === "unsupported"
+          ? null
+          : tryGeolocate(false));
+      if (pending) {
+        await Promise.race([
+          pending,
+          new Promise((resolve) => setTimeout(resolve, 1500))
+        ]);
+      }
+    }
+    if (state.userLat != null && state.userLng != null) {
+      return { lat: state.userLat, lng: state.userLng };
+    }
+    if (state.geoStatus === "ok" && state.map && state.mapHasView) {
+      const c = state.map.getCenter();
+      return { lat: c.lat, lng: c.lng };
+    }
+    return { lat: null, lng: null };
   }
 
   function addPin(lat, lng, photo, name, meta, sample, cat) {
@@ -204,8 +330,9 @@
     $("#detecting").hidden = true;
     $("#demo-frame").hidden = true;
     $("#scan-video").hidden = false;
-    $("#scan-hint").textContent = "拖动罐头，对准后松手";
+    $("#scan-hint").textContent = "点一下或拖动罐头，开始瞄准";
     resetCanPosition();
+    tryGeolocate(false);
     await startCamera();
   }
 
@@ -280,6 +407,7 @@
   }
 
   function closeScan(opts = {}) {
+    clearMissTimer();
     stopAim();
     stopCamera();
     $("#scan-screen").hidden = true;
@@ -364,33 +492,49 @@
     img.src = state.demoPhoto;
     img.hidden = false;
     $("#scan-video").hidden = true;
-    $("#scan-hint").textContent = "演示模式 · 拖动罐头对准后松手";
+    $("#scan-hint").textContent = "演示模式 · 点一下或拖动罐头，开始瞄准";
     resetCanPosition();
-    // still play minigame on release — user must drag
-    toast("演示模式：拖动罐头松手");
+    toast("演示模式：点一下或拖动罐头");
   }
 
   /* Minigame */
-  function beginMinigame(fromDemo) {
+  function beginMinigame(fromDemo, opts = {}) {
     if (fromDemo) state.scanMode = "demo";
+    clearMissTimer();
+    if (!opts.continueRound) {
+      state.data.lifetimeMinigames = (state.data.lifetimeMinigames || 0) + 1;
+      state.pendingRarity = D.weightedRarity().id;
+      S.save(state.data);
+    } else if (!state.pendingRarity) {
+      state.pendingRarity = D.weightedRarity().id;
+    }
     $("#minigame").hidden = false;
-    $("#mg-tier").textContent = `${D.weightedRarity().id} Tier`;
+    $("#mg-tier").textContent = `${state.pendingRarity} Tier`;
+    const coaching = isCoaching();
+    $("#mg-release").textContent = coaching
+      ? "橙色准星进绿色时，点屏幕"
+      : "准星进入绿色时点屏幕";
     updateTriesUI();
-    // randomize green zone
     const green = $("#aim-green");
     const width = 18 + Math.floor(Math.random() * 10); // 18-27%
     const left = 15 + Math.floor(Math.random() * (70 - width));
     green.style.width = `${width}%`;
     green.style.left = `${left}%`;
+    green.classList.toggle("coach", coaching);
     state.aimPos = 0;
     state.aimDir = 1;
+    const marker = $("#aim-marker");
+    if (marker) marker.style.left = "0%";
     startAim();
   }
 
   function startAim() {
     stopAim();
     const marker = $("#aim-marker");
-    const speed = 0.55 + Math.random() * 0.35;
+    marker.classList.remove("frozen");
+    const speed = isCoaching()
+      ? 0.35 + Math.random() * 0.20
+      : 0.55 + Math.random() * 0.35;
     const tick = () => {
       state.aimPos += state.aimDir * speed;
       if (state.aimPos >= 100) { state.aimPos = 100; state.aimDir = -1; }
@@ -400,8 +544,9 @@
     };
     state.aimRaf = requestAnimationFrame(tick);
 
-    // tap anywhere on the minigame (except cancel) to throw — easier on phones
+    // Tap anywhere on the minigame (except cancel) to throw.
     const release = (e) => {
+      if (state.aimFrozen) return;
       if (e.target.closest("#mg-cancel, #mg-cancel-x")) return;
       e.preventDefault();
       e.stopPropagation();
@@ -416,6 +561,7 @@
   }
 
   function resolveAim() {
+    if (state.aimFrozen) return;
     stopAim();
     const green = $("#aim-green");
     const gLeft = parseFloat(green.style.left);
@@ -427,22 +573,46 @@
     } else {
       state.triesLeft -= 1;
       updateTriesUI();
-      if (state.triesLeft <= 0) {
-        // consume a can, return to album
-        state.data.resources.cans = Math.max(0, state.data.resources.cans - 1);
-        S.save(state.data);
-        closeScan({ toast: "三次都没对准，罐头用掉一罐" });
-      } else {
-        toast("没对准绿色区域，再试一次");
-        // restart aim with new zone
-        beginMinigame(state.scanMode === "demo");
-      }
+      const lastMiss = state.triesLeft <= 0;
+      state.aimFrozen = true;
+      const marker = $("#aim-marker");
+      marker.classList.add("frozen");
+      if (!lastMiss) toast("没对准绿色区域，再试一次");
+      state.missTimer = setTimeout(() => {
+        state.missTimer = null;
+        state.aimFrozen = false;
+        marker.classList.remove("frozen");
+        if ($("#scan-screen").hidden) return;
+        if (lastMiss) {
+          finishMissRound();
+        } else if (!$("#minigame").hidden) {
+          beginMinigame(state.scanMode === "demo", { continueRound: true });
+        }
+      }, 400);
     }
   }
 
+  function finishMissRound() {
+    const used = state.data.freeMissRounds || 0;
+    let msg;
+    if (used < 10) {
+      state.data.freeMissRounds = used + 1;
+      msg = "三次都没对准，罐头还在";
+    } else {
+      state.data.resources.cans = Math.max(0, state.data.resources.cans - 1);
+      msg = "三次都没对准，罐头用掉一罐";
+    }
+    S.save(state.data);
+    closeScan({ toast: msg });
+  }
+
   function cancelMinigame() {
+    if (state.aimFrozen && state.triesLeft <= 0) return;
+    clearMissTimer();
     stopAim();
     $("#minigame").hidden = true;
+    const green = $("#aim-green");
+    if (green) green.classList.remove("coach");
     resetCanPosition();
     if (state.scanMode === "demo") {
       $("#demo-frame").hidden = false;
@@ -526,28 +696,20 @@
       // Success — consume 1 can
       state.data.resources.cans = Math.max(0, state.data.resources.cans - 1);
       const serial = state.data.nextSerial++;
-      let lat = state.userLat;
-      let lng = state.userLng;
-      if (lat == null && navigator.geolocation) {
-        // best-effort sync from last known; try quick read
-        tryGeolocate(false);
-        lat = state.userLat;
-        lng = state.userLng;
-      }
-      if ((lat == null || lng == null) && state.scanMode === "demo") {
-        const c = state.map ? state.map.getCenter() : { lat: 30.2741, lng: 120.1551 };
-        lat = c.lat + (Math.random() - 0.5) * 0.01;
-        lng = c.lng + (Math.random() - 0.5) * 0.01;
-      }
+      const where = await captureCoords();
+      const lat = where.lat;
+      const lng = where.lng;
 
+      const used = state.data.cats.map((c) => c.name);
       const cat = D.generateCat({
         photo: photoDataUrl,
         lat, lng,
         serial,
-        demo: state.scanMode === "demo"
+        demo: state.scanMode === "demo",
+        usedNames: used,
+        rarity: state.pendingRarity
       });
-      // fix name uniqueness against existing
-      const used = state.data.cats.map((c) => c.name);
+      // Backup if the rolled name still collides.
       if (used.includes(cat.name)) cat.name = D.generateName(used);
 
       state.data.cats.push(cat);
@@ -622,6 +784,7 @@
       stars.appendChild(s);
     }
     $("#found-photo").src = cat.photo;
+    applyPhotoStyle($("#found-photo"), cat.stickerStyle);
     $("#found-name").textContent = cat.name;
     $("#found-xp").textContent = `XP +${cat.xpGain}`;
     $("#found-coins").textContent = `🪙 +${cat.coinsGain}`;
@@ -631,16 +794,23 @@
 
   function continueFromFound() {
     const cat = state.pendingCat;
+    const firstCatch = state.data.cats.length === 1;
     $("#found-screen").hidden = true;
-    if (cat) showCard(cat);
+    if (cat) showCard(cat, { coach: firstCatch });
     else setTab("album");
   }
 
   /* Card */
-  function showCard(cat) {
+  function showCard(cat, opts = {}) {
+    const coach = $("#card-coach");
+    if (coach) {
+      coach.hidden = !opts.coach;
+      if (opts.coach) coach.textContent = "这是你的猫卡。";
+    }
     $("#card-name").textContent = cat.name;
     $("#card-serial").textContent = D.formatSerial(cat.serial);
     $("#card-photo").src = cat.photo;
+    applyPhotoStyle($("#card-photo"), cat.stickerStyle);
     $("#card-rarity").textContent = cat.rarity;
     $("#card-type").textContent = `Iconic Cat · ${cat.type}`;
     $("#card-snack").textContent = cat.snack;
@@ -670,6 +840,8 @@
 
   function closeCard() {
     $("#card-screen").hidden = true;
+    const coach = $("#card-coach");
+    if (coach) coach.hidden = true;
     state.pendingCat = null;
     setTab("album");
     renderAlbum();
@@ -697,7 +869,7 @@
     $("#card-close").addEventListener("click", closeCard);
     $("#notice-close").addEventListener("click", () => { $("#map-notice").hidden = true; });
     $("#pin-preview-close").addEventListener("click", () => { $("#pin-preview").hidden = true; });
-    $("#map-locate").addEventListener("click", () => tryGeolocate(true));
+    $("#map-locate").addEventListener("click", () => tryGeolocate(true, { fresh: true }));
     setupCanDrag();
 
   }
