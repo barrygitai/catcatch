@@ -34,14 +34,14 @@ window.CatchData = (() => {
   ];
 
   const KEYWORDS = [
-    { name: "Guard", icon: "🛡️", desc: "守楼的猫，路过的人会多看一眼。" },
-    { name: "Copycat", icon: "🐱", desc: "学隔壁那只的坐姿，镜头里像一对。" },
-    { name: "Finale", icon: "🎆", desc: "天色刚暗时最愿意入镜，最后一张往往最好看。" },
-    { name: "Snacktime", icon: "🥫", desc: "听见开罐声就会靠近，照片里常带着零食。" },
-    { name: "Purrfect", icon: "😻", desc: "对镜头眨眼，连拍里总有一张刚好。" },
-    { name: "Nap", icon: "😴", desc: "晒着太阳打盹，影子软软地铺在台阶上。" },
-    { name: "Zoomies", icon: "💨", desc: "突然冲去窗边，照片容易糊。" },
-    { name: "Loaf", icon: "🍞", desc: "趴着不动时特别上镜。" }
+    { name: "Guard", icon: "🛡️", desc: "你的猫在这里不会被敌方诡计或技能打中。" },
+    { name: "Copycat", icon: "🐱", desc: "复制上一张打出的能力，原样再来一次。" },
+    { name: "Finale", icon: "🎆", desc: "最后一轮：再抽一张牌作为终局一击。" },
+    { name: "Snacktime", icon: "🥫", desc: "每回合开始时，零食值 +1。" },
+    { name: "Purrfect", icon: "😻", desc: "魅力判定时，额外掷一次并取较高结果。" },
+    { name: "Nap", icon: "😴", desc: "跳过一回合，下回合零食与魅力翻倍。" },
+    { name: "Zoomies", icon: "💨", desc: "立刻再行动一次，但本回合魅力 -2。" },
+    { name: "Loaf", icon: "🍞", desc: "保持不动时，受到的伤害减半。" }
   ];
 
   // Lat/lng here are only the shape of the sample cluster. The map recenters
